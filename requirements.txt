@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+gunicorn
+sqlalchemy>=1.4
+asyncpg
+alembic
+python-dotenv
+psycopg2-binary
+requests
+jinja2
+python-multipart
+aiofiles
