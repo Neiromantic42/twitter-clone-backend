@@ -1,23 +1,29 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request, Path
 from fastapi import Depends, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
-from typing import Dict, List
+from fastapi.responses import HTMLResponse, JSONResponse
 import logging
 import aiofiles
-from sqlalchemy import update
+from sqlalchemy import update, delete
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
 
 from app.models import Users, Tweets, Medias, Likes, Follows
+
 from app.dependencies import get_current_user
 from app.database import async_session, engine, Base, get_session, AsyncSession
 from app.schemas.api_users_me import UserMeResponse
 from app.schemas.api_tweets import TweetListResponse
 from app.schemas.api_medias import ResponseApiMedias
-from app.schemas.post_api_tweets import TweetData
+from app.schemas.post_api_tweets import TweetData, AnswerApiTweets
+from app.schemas.tweet_delete_schemas import ResponseTweetDelete
+from app.schemas.api_likes_add_and_delete import ResponseApiAddLike, ResponseApiDeleteLike
+from app.schemas.get_api_users_user_id_schemas import ResponseWithUserData
+from app.schemas.api_users_user_id_follow_delete import Response
+
+
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -54,7 +60,7 @@ async def root(request: Request):
     Отдаёт HTML-страницу клиенту.
     Используется для фронтенда, не требует API key.
     """
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 @app.get("/api/users/me", response_model=UserMeResponse)
 async def get_api_user_me(user: Users = Depends(get_current_user)):
@@ -70,7 +76,6 @@ async def get_api_user_me(user: Users = Depends(get_current_user)):
         {"id": f.followed.id, "name": f.followed.name}
         for f in user.following
     ]
-
     logger.info(f"following: {following}")
 
     return {
@@ -167,12 +172,13 @@ async def get_media_download(
         "media_id": new_media.id
     }
 
-@app.post("/api/tweets")
+@app.post("/api/tweets", response_model=AnswerApiTweets)
 async def get_create_tweet(
-        tweet_data: TweetData,
+        tweet_data: TweetData, # Валидация входных данных
         user: Users = Depends(get_current_user),
         session: AsyncSession = Depends(get_session)
 ):
+    """Конечная точка для создания твита"""
     # Проверяем подается ли список идентификаторов медиафайлов
     if tweet_data.tweet_media_ids == []:
         async with session.begin():
@@ -206,7 +212,301 @@ async def get_create_tweet(
             )
             await session.execute(update_query)
 
-        return {
-            "result": True,
-            "tweet_id": tweet_id
+        return AnswerApiTweets(
+            result=True,
+            tweet_id=tweet_id
+        )
+
+
+@app.delete("/api/tweets/{id}", response_model=ResponseTweetDelete)
+async def get_tweet_deleted(
+        id: int = Path(
+            ..., #Обязательное поле
+            title="Tweet id",
+            description="ID удаляемого твита",
+            ge=1, # значение больше или ровно 1
+        ),
+        user: Users = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session)
+):
+    """Конечная точка для удаления твита"""
+    async with session.begin():
+        # Запрос на получение твита по id
+        result = await session.execute(select(Tweets).where(Tweets.id == id))
+        tweet = result.scalar_one_or_none()
+        # Проверяем есть ли твит, если нет возвращаем ошибку
+        if tweet is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "result": False,
+                    "error_type": "NotFound",
+                    "error_message": "Tweet not found"
+                }
+            )
+        # Сравниваем api-key текущего юзера с api-key юзера удаляемого твита
+        api_key_weaving_user = user.api_key # API-ключ текущего пользователя (автор запроса)
+        api_key_of_tweet_to_be_removed = tweet.user.api_key # API-ключ владельца твита
+        if api_key_weaving_user != api_key_of_tweet_to_be_removed:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "result": False,
+                    "error_type": "Forbidden",
+                    "error_message": "Access denied"
+                }
+            )
+        # если все окей, удаляем сам твит, и каскад удалит все связные данные
+        if tweet:
+            await session.delete(tweet)
+            return {
+                "result": True
+            }
+
+@app.post("/api/tweets/{tweet_id}/likes", response_model=ResponseApiAddLike)
+async def get_like_mark(
+        tweet_id: int = Path(
+            ...,
+            title="Tweet id",
+            description="ID понравившегося твита",
+            ge=1, # значение больше или ровно 1
+        ),
+        user: Users = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session)
+):
+    """Конечная точка для получения лайка"""
+    # Проверяем существует ли твит с таким id
+    async with session.begin():
+        # Запрос на получение твита по id
+        result = await session.execute(select(Tweets).where(Tweets.id == tweet_id))
+        tweet = result.scalar_one_or_none()
+        # Проверяем есть ли твит, если нет возвращаем ошибку
+        if tweet is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "result": False,
+                    "error_type": "NotFound",
+                    "error_message": "Tweet not found"
+                }
+            )
+        # Проверка: уже ли поставлен лайк этим пользователем
+        current_user_id = user.id
+        # Запрос на получение записи о лайке юзера переданному id твита
+        result = await session.execute(
+            select(Likes)
+            .where(
+                Likes.user_id==current_user_id,
+                Likes.tweet_id==tweet.id
+            )
+        )
+        like = result.scalar_one_or_none()
+        logger.info(f"LIKE: {like}")
+        if like is not None:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "result": False,
+                    "error_type": "Conflict",
+                    "error_message": "Already liked"
+                }
+            )
+        # Если все проверки пройдены, создаем лайк
+        new_like = Likes(
+            user_id=user.id,
+            tweet_id=tweet_id
+        )
+        session.add(new_like)
+
+    return {
+        "result": True
+    }
+
+@app.delete("/api/tweets/{tweet_id}/likes", response_model=ResponseApiDeleteLike)
+async def get_delete_like(
+        tweet_id: int = Path(
+            ...,
+            title="Tweet id",
+            description="ID понравившегося твита",
+            ge=1, # значение больше или ровно 1
+        ),
+        user: Users = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session)
+):
+    """Конечная точка для удаления лайка"""
+    # Проверяем существует ли твит с таким id
+    async with session.begin():
+        # Запрос на получение твита по id
+        result = await session.execute(select(Tweets).where(Tweets.id == tweet_id))
+        tweet = result.scalar_one_or_none()
+        # Проверяем есть ли твит, если нет возвращаем ошибку
+        if tweet is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "result": False,
+                    "error_type": "NotFound",
+                    "error_message": "Tweet not found"
+                }
+            )
+        # Проверка: уже ли поставлен лайк этим пользователем
+        current_user_id = user.id
+        # Запрос на получение записи о лайке юзера переданному id твита
+        result = await session.execute(
+            select(Likes)
+            .where(
+                Likes.user_id == current_user_id,
+                Likes.tweet_id == tweet.id
+            )
+        )
+        like = result.scalar_one_or_none()
+        logger.info(f"LIKE: {like}")
+        if like is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "result": False,
+                    "error_type": "NotFound",
+                    "error_message": "Like already revoked"
+                }
+            )
+        # Если все проверки пройдены, удаляем лайк
+        await session.execute(
+            delete(Likes).where(
+                Likes.user_id == current_user_id,
+                Likes.tweet_id == tweet.id
+            )
+        )
+
+    return {
+        "result": True
+    }
+
+@app.get("/api/users/{user_id}", response_model=ResponseWithUserData)
+async def get_user_data_by_id(
+    user_id: int = Path(
+        ...,
+        title="User id",
+        description="ID текущего пользователя",
+        ge=1  # значение больше или равно 1
+    ),
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    """Конечная точка для получения информации о произвольном профиле по его id"""
+    # Получаем запрашиваемого юзера
+    async with session.begin():
+        result = await session.execute(
+            select(Users)
+            .options(
+                selectinload(Users.followers).joinedload(Follows.follower),
+                selectinload(Users.following).joinedload(Follows.followed)
+            )
+            .where(Users.id == user_id))
+
+        requested_user = result.scalars().first()
+
+        # Получаем список подписчиков
+        followers = [
+            {"id": f.follower.id, "name": f.follower.name}
+            for f in requested_user.followers
+        ]
+        logger.info(f"followers: {followers}")
+        # Получаем список подписок (на кого подписан пользователь)
+        following = [
+            {"id": f.followed.id, "name": f.followed.name}
+            for f in requested_user.following
+        ]
+        logger.info(f"following: {following}")
+
+    return {
+        "result": True,
+        "user": {
+            "id": user_id,
+            "name": requested_user.name,
+            "followers": followers,
+            "following": following
         }
+    }
+
+@app.delete("/api/users/{user_id}/follow", response_model=Response)
+async def get_unsubscribe(
+    user_id: int = Path(
+        ...,
+        title="User id",
+        description="ID текущего пользователя",
+        ge=1  # значение больше или равно 1
+    ),
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    """Конечная точка для отписки от другого пользователя"""
+    # сперва проверяем существует ли такая подписка
+    current_user_id = user.id
+    async with session.begin():
+        result = await session.execute(
+            select(Follows).where(
+                Follows.follower_id == current_user_id,
+                Follows.followed_id == user_id
+            )
+        )
+        subscription = result.scalar_one_or_none()
+
+        if subscription is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "result": False,
+                    "error_type": "NotFound",
+                    "error_message": "Subscription not found"
+                }
+            )
+        # Если все проверки пройдены и подписка найдена, то удаляем ее
+        await session.execute(
+            delete(Follows).where(
+                Follows.follower_id == current_user_id,
+                Follows.followed_id == user_id
+            )
+        )
+
+    return {
+        "result": True
+    }
+
+@app.post("/api/users/{user_id}/follow", response_model=Response)
+async def get_subscription(
+    user_id: int = Path(
+        ...,
+        title="User id",
+        description="ID текущего пользователя",
+        ge=1  # значение больше или равно 1
+    ),
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    """Конечная точка для получения подписки на другого пользователя"""
+    # сперва проверяем существует ли такая подписка
+    current_user_id = user.id
+    async with session.begin():
+        result = await session.execute(
+            select(Follows).where(
+                Follows.follower_id == current_user_id,
+                Follows.followed_id == user_id
+            )
+        )
+        subscription = result.scalar_one_or_none()
+        if subscription is not None:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "result": False,
+                    "error_type": "BadRequest",
+                    "error_message": "Subscription already made"
+                }
+            )
+        else:
+            new_follow = Follows(follower_id = user.id, followed_id = user_id)
+            session.add(new_follow)
+            return {
+                "result": True
+            }

@@ -1,11 +1,6 @@
-import datetime
-from typing import Dict, Any
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, \
-    create_engine, Sequence, Identity, ForeignKey, delete, \
-    BOOLEAN, JSON, Text, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship, backref
-from sqlalchemy.dialects.postgresql import insert, ARRAY
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 
@@ -15,7 +10,7 @@ class Users(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=False)
-    api_key = Column(String(100), nullable=False)
+    api_key = Column(String(100), nullable=False, unique=True)
     tweets = relationship("Tweets", back_populates="user",
                           cascade="all, delete-orphan")
     likes = relationship("Likes", back_populates="user",
@@ -62,7 +57,7 @@ class Medias(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     tweet_id = Column(Integer, ForeignKey('tweets.id', ondelete='CASCADE'))
-    path_url = Column(String(255), nullable=False)
+    path_url = Column(String(255), nullable=False, index=True, unique=True)
 
 
 class Likes(Base):

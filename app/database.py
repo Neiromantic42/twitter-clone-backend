@@ -1,12 +1,9 @@
-from weakref import finalize
-
+import sqlalchemy
 from sqlalchemy.ext.asyncio import (  # Импортируем асинхронный движок и сессию
     AsyncSession,
     create_async_engine,
 )
-from sqlalchemy.ext.declarative import (  # Импортируем базовый класс
-    declarative_base,
-)
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker  # Импортируем фабрику сессий
 import logging
 
@@ -27,7 +24,7 @@ async_session = sessionmaker(
 )  # type: ignore
 
 # Создаём базовый класс для описания моделей таблиц
-Base = declarative_base()
+Base = sqlalchemy.orm.declarative_base()
 
 # метод для создания сессии
 async def get_session():

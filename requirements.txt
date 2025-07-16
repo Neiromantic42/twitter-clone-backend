@@ -10,3 +10,5 @@ requests
 jinja2
 python-multipart
 aiofiles
+pytest
+pytest-asyncio
