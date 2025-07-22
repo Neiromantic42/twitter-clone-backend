@@ -21,12 +21,12 @@ class AnswerApiTweets(BaseModel):
         ...,
         title='Булево значение',
         description='Флаг успешности выполнения запроса',
-        example=True
+        examples=[{"value": True}]
     )
     tweet_id: int = Field(
         ...,
         title='Идентификатор твита',
         description='id вновь созданного твита с картинкой или без',
-        example=7
+        examples=[{"value": 7}]
     )
 

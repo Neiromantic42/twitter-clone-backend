@@ -10,6 +10,10 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
 
+# импорт для теста
+from app.config import MEDIA_DIR
+from pathlib import Path as PathlibPath
+
 from app.models import Users, Tweets, Medias, Likes, Follows
 
 from app.dependencies import get_current_user
@@ -64,7 +68,10 @@ async def root(request: Request):
 
 @app.get("/api/users/me", response_model=UserMeResponse)
 async def get_api_user_me(user: Users = Depends(get_current_user)):
-    """конечная точка где пользователю отдается информация о его профиле"""
+    """
+    конечная точка где пользователю отдается информация
+    о его профиле
+    """
     # Получаем список подписчиков
     followers = [
         {"id": f.follower.id, "name": f.follower.name}
@@ -93,7 +100,9 @@ async def get_twitter_feed(
         user: Users = Depends(get_current_user),
         session: AsyncSession = Depends(get_session)
 ):
-    """конечная точка, где на клиент отдается лента твиттера"""
+    """
+    конечная точка, где на клиент отдается лента твиттера
+    """
     logger.info(f"Обьект юзера: {user}")
     # возвращаем список id всех пользователей, на которых подписан текущий пользователь [2,3]
     following_ids = [f.followed_id for f in user.following]
@@ -151,12 +160,29 @@ async def get_twitter_feed(
 async def get_media_download(
         user: Users = Depends(get_current_user),
         session: AsyncSession = Depends(get_session),
-        file: UploadFile = File(..., description="Загружаемый файл")
+        file: UploadFile = File(
+            ...,
+            description="Загружаемый файл"
+        )
 ):
-    """Endpoint для загрузки файлов из твита.\
-     Загрузка происходит через отправку формы"""
+    """
+    Endpoint для загрузки файлов из твита.
+    Загрузка происходит через отправку формы
+    """
+    # проверяем пришел ли фаил в запросе
+    if not file.filename:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "result": False,
+                "error_type": "BadRequest",
+                "error_message": "Missing mandatory parameter,"
+                                 " file in request body"
+            }
+        )
     # читаем входящий файл и пишем его в нисходящий файл в директорию media
-    async with aiofiles.open(f"media/{file.filename}", 'wb') as out_file:
+    # async with aiofiles.open(f"media/{file.filename}", 'wb') as out_file:
+    async with aiofiles.open(MEDIA_DIR / file.filename, 'wb') as out_file:
         content = await file.read()
         await out_file.write(content)
 

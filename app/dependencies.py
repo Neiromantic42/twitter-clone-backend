@@ -1,7 +1,8 @@
 from fastapi import Depends, Request, HTTPException, status
-from app.database import async_session, engine, Base, get_session, AsyncSession
+from app.database import get_session, AsyncSession
 from app.models import Users, Tweets, Medias, Likes, Follows
 import logging
+import asyncio
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,6 +15,7 @@ async def get_current_user(
         session: AsyncSession = Depends(get_session)
 ) -> Users:
     """Depends - метод для получения текущего пользователя и проверки валидности api_key"""
+    logger.info(f"get_current_user loop: {asyncio.get_running_loop()}")
     api_key = request.headers.get('api-key')
     # Проверяем есть ли хедер api_key в запросе клиента
     if not api_key:

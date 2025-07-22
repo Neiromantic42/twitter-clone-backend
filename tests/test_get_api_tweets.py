@@ -1,6 +1,6 @@
 import pytest
 
-@pytest.mark.tweets
+@pytest.mark.tweets_get
 @pytest.mark.asyncio
 async def test_get_api_tweets(async_client):
     """
@@ -42,7 +42,7 @@ async def test_get_api_tweets(async_client):
         assert tweets_data == []
 
 
-@pytest.mark.tweets
+@pytest.mark.tweets_get
 @pytest.mark.asyncio
 @pytest.mark.parametrize("api_key, status_code", [('bad-key', 404), ("", 401)])
 async def test_negative_api_tweets(async_client, api_key, status_code):

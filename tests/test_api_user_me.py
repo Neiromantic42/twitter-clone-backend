@@ -1,4 +1,10 @@
 import pytest
+import logging
+import asyncio
+
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 @pytest.mark.users
 @pytest.mark.asyncio
@@ -24,6 +30,7 @@ async def test_negative_api_user_me(async_client, api_key, status_code):
     """
     Проверка ответа API при неверном или отсутствующем API-ключе.
     """
+    logger.info(f"test_negative_api_user_me loop: {asyncio.get_running_loop()}")
     resp = await async_client.get("/api/users/me",
                                   headers={"api-key": api_key})
     assert resp.status_code == status_code
