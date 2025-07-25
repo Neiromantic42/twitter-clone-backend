@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 import logging
 import aiofiles
-from sqlalchemy import update, delete
+from sqlalchemy import update, delete, insert
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
@@ -42,6 +42,65 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         # Создаём все таблицы, определённые в моделях, если они ещё не созданы
         await conn.run_sync(Base.metadata.create_all)
+    # Проверяем есть ли записи в таблицах
+    async with async_session() as session:
+        async with session.begin():
+            query = (select(Users).limit(1))
+            result = await session.execute(query)
+            user = result.scalar_one_or_none()
+            # если записей нет начинаем предзаполнять таблицы
+            if user is None:
+                await session.add_all([
+                    Users(id=1 ,name="Alexander", api_key="test"),
+                    Users(id=2, name="Kate", api_key="key2"),
+                    Users(id=3, name="Sergey", api_key="key3")
+                ])
+                logger.info("Inserted default users into the database.")
+                await session.add_all([
+                    Follows(follower_id=2, followed_id=1),
+                    Follows(follower_id=2, followed_id=3),
+                    Follows(follower_id=3, followed_id=1),
+                    Follows(follower_id=3, followed_id=2),
+                    Follows(follower_id=1, followed_id=3),
+                    Follows(follower_id=1, followed_id=2)
+                ])
+                logger.info("Added default subscriptions to the database.")
+                await session.add_all([
+                    Tweets(id=11, user_id=1, content="сплав по марийской тайге"),
+                    Tweets(id=13, user_id=1, content="Видели столбы на Лене"),
+                    Tweets(id=15, user_id=3, content="Я сергей - но я не гей"),
+                    Tweets(id=19, user_id=2, content="Ред флаги в мужиках"),
+                    Tweets(id=22, user_id=1, content="Июньская жара"),
+                    Tweets(id=56, user_id=1, content="21.07.2025 удалось пофиксить бак"),
+                    Tweets(id=58, user_id=1, content="Мое любимое дерево"),
+                    Tweets(id=71, user_id=2, content="Купила себе пушку гонку для кофе райда ")
+                ])
+                logger.info("Added default tweets to the database.")
+                await session.add_all([
+                    Medias(id=13, tweet_id=11, path_url="лес.jpeg"),
+                    Medias(id=15, tweet_id=13, path_url="ленские_столбы.jpeg"),
+                    Medias(id=17, tweet_id=15, path_url="гей.jpeg"),
+                    Medias(id=21, tweet_id=19, path_url="тупая_пизда.jpeg"),
+                    Medias(id=23, tweet_id=22, path_url="рица.webp"),
+                    Medias(id=119, tweet_id=56, path_url="пофиксил баг.jpg"),
+                    Medias(id=126, tweet_id=58, path_url="дуб.jpeg"),
+                    Medias(id=137, tweet_id=71, path_url="гревел.jpg")
+                ])
+                logger.info("Added default media to the database.")
+                await session.add_all([
+                    Likes(user_id=2, tweet_id=15),
+                    Likes(user_id=2, tweet_id=13),
+                    Likes(user_id=2, tweet_id=11),
+                    Likes(user_id=2, tweet_id=19),
+                    Likes(user_id=1, tweet_id=11),
+                    Likes(user_id=1, tweet_id=13),
+                    Likes(user_id=1, tweet_id=15),
+                    Likes(user_id=1, tweet_id=22),
+                    Likes(user_id=1, tweet_id=58),
+                    Likes(user_id=1, tweet_id=71),
+                ])
+                logger.info("Added default likes to the database.")
+
     # yield ставит точку паузы. Весь код до yield выполняется при старте
     yield
     await engine.dispose() # Очищаем ресурсы и закрываем соединения
@@ -375,7 +434,7 @@ async def get_delete_like(
                     "error_message": "Tweet not found"
                 }
             )
-        # Проверка: уже ли поставлен лайк этим пользователем
+        # Проверка: уже ли удален лайк
         current_user_id = user.id
         # Запрос на получение записи о лайке юзера переданному id твита
         result = await session.execute(
@@ -413,13 +472,16 @@ async def get_user_data_by_id(
     user_id: int = Path(
         ...,
         title="User id",
-        description="ID текущего пользователя",
+        description="ID произвольного пользователя",
         ge=1  # значение больше или равно 1
     ),
     user: Users = Depends(get_current_user),
     session: AsyncSession = Depends(get_session)
 ):
-    """Конечная точка для получения информации о произвольном профиле по его id"""
+    """
+    Конечная точка для получения информации о
+    произвольном профиле по его id
+    """
     # Получаем запрашиваемого юзера
     async with session.begin():
         result = await session.execute(
@@ -431,7 +493,15 @@ async def get_user_data_by_id(
             .where(Users.id == user_id))
 
         requested_user = result.scalars().first()
-
+        if requested_user is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "result": False,
+                    "error_type": "NotFound",
+                    "error_message": "User not found"
+                }
+            )
         # Получаем список подписчиков
         followers = [
             {"id": f.follower.id, "name": f.follower.name}
@@ -511,7 +581,22 @@ async def get_subscription(
     session: AsyncSession = Depends(get_session)
 ):
     """Конечная точка для получения подписки на другого пользователя"""
-    # сперва проверяем существует ли такая подписка
+    # проверяем существует ли такой пользователь
+    async with session.begin():
+        result = await session.execute(
+            select(Users).where(Users.id == user_id)
+        )
+        target_user = result.scalar_one_or_none()
+        if target_user is None:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "result": False,
+                    "error_type": "BadRequest",
+                    "error_message": "User not found"
+                }
+            )
+    # проверяем существует ли такая подписка
     current_user_id = user.id
     async with session.begin():
         result = await session.execute(
