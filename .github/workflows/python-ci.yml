@@ -43,7 +43,7 @@ jobs:
           pip install pytest
 
       - name: Start docker-compose services
-        run: docker-compose up -d
+        run: docker compose up -d
 
       - name: Wait for backend to be ready
         run: |
