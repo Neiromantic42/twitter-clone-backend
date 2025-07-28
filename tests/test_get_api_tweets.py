@@ -18,7 +18,7 @@ async def test_get_api_tweets(async_client):
     - Если список пустой, проверяется, что он именно пустой
     """
     resp = await async_client.get("/api/tweets",
-                                  headers={"api-key": "key4"})
+                                  headers={"api-key": "test"})
     assert resp.status_code == 200
     assert resp.json().get('result') == True
     tweets_data = resp.json().get('tweets')

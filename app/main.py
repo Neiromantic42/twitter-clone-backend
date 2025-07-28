@@ -50,13 +50,13 @@ async def lifespan(app: FastAPI):
             user = result.scalar_one_or_none()
             # если записей нет начинаем предзаполнять таблицы
             if user is None:
-                await session.add_all([
+                session.add_all([
                     Users(id=1 ,name="Alexander", api_key="test"),
                     Users(id=2, name="Kate", api_key="key2"),
                     Users(id=3, name="Sergey", api_key="key3")
                 ])
                 logger.info("Inserted default users into the database.")
-                await session.add_all([
+                session.add_all([
                     Follows(follower_id=2, followed_id=1),
                     Follows(follower_id=2, followed_id=3),
                     Follows(follower_id=3, followed_id=1),
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
                     Follows(follower_id=1, followed_id=2)
                 ])
                 logger.info("Added default subscriptions to the database.")
-                await session.add_all([
+                session.add_all([
                     Tweets(id=11, user_id=1, content="сплав по марийской тайге"),
                     Tweets(id=13, user_id=1, content="Видели столбы на Лене"),
                     Tweets(id=15, user_id=3, content="Я сергей - но я не гей"),
@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
                     Tweets(id=71, user_id=2, content="Купила себе пушку гонку для кофе райда ")
                 ])
                 logger.info("Added default tweets to the database.")
-                await session.add_all([
+                session.add_all([
                     Medias(id=13, tweet_id=11, path_url="лес.jpeg"),
                     Medias(id=15, tweet_id=13, path_url="ленские_столбы.jpeg"),
                     Medias(id=17, tweet_id=15, path_url="гей.jpeg"),
@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
                     Medias(id=137, tweet_id=71, path_url="гревел.jpg")
                 ])
                 logger.info("Added default media to the database.")
-                await session.add_all([
+                session.add_all([
                     Likes(user_id=2, tweet_id=15),
                     Likes(user_id=2, tweet_id=13),
                     Likes(user_id=2, tweet_id=11),
