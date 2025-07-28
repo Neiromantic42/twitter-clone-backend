@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 from sqlalchemy.future import select
 from app.models import Users
 
@@ -15,6 +16,22 @@ async def test_get_api_users_user_id(async_client, test_session):
     - В конце теста тестовый пользователь удаляется из базы.
     Проверяется наличие ключей: "id", "name", "followers", "following".
     """
+    # Получить имя sequence для поля id в таблице users
+    result = await test_session.execute(
+        text("SELECT pg_get_serial_sequence('users', 'id')")
+    )
+    seq_name = result.scalar_one()
+
+    # Сбросить sequence на максимум id из таблицы или 1, если таблица пустая
+    await test_session.execute(
+        text(f"""
+        SELECT setval(
+            '{seq_name}',
+            COALESCE((SELECT MAX(id) FROM users), 1),
+            (SELECT CASE WHEN EXISTS (SELECT 1 FROM users) THEN true ELSE false END)
+        )
+        """)
+    )
     # Создаем тестового пользователя
     test_user = Users(
         name="test user",
