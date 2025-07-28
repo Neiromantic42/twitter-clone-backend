@@ -2,6 +2,7 @@ import aiofiles
 import pytest
 from app.config import MEDIA_DIR
 from app.models import Medias
+from sqlalchemy import text
 from sqlalchemy.future import select
 
 import os
@@ -18,6 +19,23 @@ async def test_post_api_medias(async_client, test_session):
     а лишь возвращает ID загруженного медиафайла,
     который затем используется в запросе создания твита.
     """
+    # Получить имя sequence для поля id в таблице medias
+    result = await test_session.execute(
+        text("SELECT pg_get_serial_sequence('medias', 'id')")
+    )
+    seq_name = result.scalar_one()
+
+    # Сбросить sequence на максимум id из таблицы или 1, если таблица пустая
+    await test_session.execute(
+        text(f"""
+        SELECT setval(
+            '{seq_name}',
+            COALESCE((SELECT MAX(id) FROM medias), 1),
+            (SELECT CASE WHEN EXISTS (SELECT 1 FROM medias) THEN true ELSE false END)
+        )
+        """)
+    )
+    await test_session.commit()
     # Читаем тестовый файл перед отправкой
     async with aiofiles.open(
             "tests/test_media_files/осел.jpeg",

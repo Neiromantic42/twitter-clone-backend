@@ -9,8 +9,8 @@ async def test_api_delete_follow(async_client, test_session):
     Проверка успешного удаления подписки пользователя.
     """
     # Создаем двух тестовых пользователей
-    test_user_1 = Users(name="user_1", api_key="test_key_1")
-    test_user_2 = Users(name="user_2", api_key="test_key_2")
+    test_user_1 = Users(id=666, name="user_1", api_key="test_key_1")
+    test_user_2 = Users(id=667, name="user_2", api_key="test_key_2")
     test_session.add_all([test_user_1, test_user_2])
     await test_session.commit()
 
@@ -46,8 +46,8 @@ async def test_negative_api_delete_follow(async_client, test_session):
     Проверка ошибки при удалении несуществующей подписки.
     """
     # Создаем двух тестовых пользователей без подписки
-    test_user_1 = Users(name="user_1", api_key="test_key_1")
-    test_user_2 = Users(name="user_2", api_key="test_key_2")
+    test_user_1 = Users(id=668, name="user_1", api_key="test_key_1")
+    test_user_2 = Users(id=669, name="user_2", api_key="test_key_2")
     test_session.add_all([test_user_1, test_user_2])
     await test_session.commit()
 

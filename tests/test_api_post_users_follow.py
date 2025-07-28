@@ -8,8 +8,8 @@ async def test_api_add_follow(async_client, test_session):
     Проверка успешного подписки пользователя.
     """
     # Создаем двух тестовых пользователей
-    test_user_1 = Users(name="user_1", api_key="test_key_1")
-    test_user_2 = Users(name="user_2", api_key="test_key_2")
+    test_user_1 = Users(id=670, name="user_1", api_key="test_key_1")
+    test_user_2 = Users(id=671, name="user_2", api_key="test_key_2")
     test_session.add_all([test_user_1, test_user_2])
     await test_session.commit()
     # запрос на получение подписки
@@ -40,8 +40,8 @@ async def test_negative_subscription_created(async_client, test_session):
     """
     try:
         # Создаем двух тестовых пользователей
-        test_user_1 = Users(name="user_1", api_key="test_key_1")
-        test_user_2 = Users(name="user_2", api_key="test_key_2")
+        test_user_1 = Users(id=672, name="user_1", api_key="test_key_1")
+        test_user_2 = Users(id=673, name="user_2", api_key="test_key_2")
         test_session.add_all([test_user_1, test_user_2])
         await test_session.commit()
         # Подписываем первого пользователя на второго
