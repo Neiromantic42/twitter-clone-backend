@@ -1,5 +1,6 @@
 import pytest
-from app.models import Users, Follows
+
+from app.models import Follows, Users
 
 
 @pytest.mark.user_delete_follow
@@ -21,8 +22,7 @@ async def test_api_delete_follow(async_client, test_session):
 
     # Удаляем подписку через API
     resp = await async_client.delete(
-        f"/api/users/{test_user_2.id}/follow",
-        headers={"api-key": test_user_1.api_key}
+        f"/api/users/{test_user_2.id}/follow", headers={"api-key": test_user_1.api_key}
     )
 
     assert resp.status_code == 200
@@ -53,8 +53,7 @@ async def test_negative_api_delete_follow(async_client, test_session):
 
     # Пытаемся удалить подписку, которой нет
     resp = await async_client.delete(
-        f"/api/users/{test_user_2.id}/follow",
-        headers={"api-key": test_user_1.api_key}
+        f"/api/users/{test_user_2.id}/follow", headers={"api-key": test_user_1.api_key}
     )
 
     assert resp.status_code == 404
@@ -76,14 +75,13 @@ async def test_negative_api_delete_follow(async_client, test_session):
 
 @pytest.mark.user_delete_follow
 @pytest.mark.asyncio
-@pytest.mark.parametrize("api_key, status_code", [('bad-key', 404), ("", 401)])
+@pytest.mark.parametrize("api_key, status_code", [("bad-key", 404), ("", 401)])
 async def test_negative_api_user_user_id(async_client, api_key, status_code):
     """
     Проверка ответов при некорректном API-ключе.
     """
     resp = await async_client.delete(
-        "/api/users/{}/follow",
-        headers={"api-key": api_key}
+        "/api/users/{}/follow", headers={"api-key": api_key}
     )
 
     assert resp.status_code == status_code

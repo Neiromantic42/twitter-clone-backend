@@ -1,5 +1,6 @@
 import pytest
 
+
 @pytest.mark.tweets_get
 @pytest.mark.asyncio
 async def test_get_api_tweets(async_client):
@@ -17,11 +18,10 @@ async def test_get_api_tweets(async_client):
     - likes — список словарей, каждый с ключами "user_id" и "name"
     - Если список пустой, проверяется, что он именно пустой
     """
-    resp = await async_client.get("/api/tweets",
-                                  headers={"api-key": "test"})
+    resp = await async_client.get("/api/tweets", headers={"api-key": "test"})
     assert resp.status_code == 200
-    assert resp.json().get('result') == True
-    tweets_data = resp.json().get('tweets')
+    assert resp.json().get("result") == True
+    tweets_data = resp.json().get("tweets")
     assert isinstance(tweets_data, list)
     if tweets_data:
         for tweet in tweets_data:
@@ -30,12 +30,12 @@ async def test_get_api_tweets(async_client):
             assert "author" in tweet
             assert "likes" in tweet
             assert "content" in tweet
-            assert isinstance(tweet['attachments'], list)
-            assert isinstance(tweet['author'], dict)
-            assert "id" in tweet['author']
-            assert "name" in tweet['author']
-            assert isinstance(tweet['likes'], list)
-            for likes in tweet['likes']:
+            assert isinstance(tweet["attachments"], list)
+            assert isinstance(tweet["author"], dict)
+            assert "id" in tweet["author"]
+            assert "name" in tweet["author"]
+            assert isinstance(tweet["likes"], list)
+            for likes in tweet["likes"]:
                 assert "user_id" in likes
                 assert "name" in likes
     else:
@@ -44,11 +44,10 @@ async def test_get_api_tweets(async_client):
 
 @pytest.mark.tweets_get
 @pytest.mark.asyncio
-@pytest.mark.parametrize("api_key, status_code", [('bad-key', 404), ("", 401)])
+@pytest.mark.parametrize("api_key, status_code", [("bad-key", 404), ("", 401)])
 async def test_negative_api_tweets(async_client, api_key, status_code):
     """
     Проверка ответа API при неверном или отсутствующем API-ключе.
     """
-    resp = await async_client.get("/api/tweets",
-                                  headers={"api-key": api_key})
+    resp = await async_client.get("/api/tweets", headers={"api-key": api_key})
     assert resp.status_code == status_code
