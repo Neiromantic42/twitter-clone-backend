@@ -1,13 +1,15 @@
-import aiofiles
-import pytest
-from sqlalchemy import and_
-from app.config import MEDIA_DIR
-from app.models import Medias, Tweets
-from sqlalchemy.future import select
-
 import os
 
+import aiofiles
+import pytest
+from sqlalchemy import and_, text
+from sqlalchemy.future import select
+
+from app.config import MEDIA_DIR
+from app.models import Medias, Tweets
+
 os.makedirs(MEDIA_DIR, exist_ok=True)
+
 
 @pytest.mark.tweets_post
 @pytest.mark.asyncio
@@ -17,41 +19,74 @@ async def test_post_api_tweets(async_client, test_session):
     с привязкой к этому медиафайлу.
     Проверяет успешную вставку и связь между таблицами Medias и Tweets.
     """
+    # Получить имя sequence для поля id в таблице medias
+    result = await test_session.execute(
+        text("SELECT pg_get_serial_sequence('medias', 'id')")
+    )
+    seq_name = result.scalar_one()
+
+    # Сбросить sequence на максимум id из таблицы или 1, если таблица пустая
+    await test_session.execute(
+        text(
+            f"""
+           SELECT setval(
+               '{seq_name}',
+               COALESCE((SELECT MAX(id) FROM medias), 1),
+               (SELECT CASE WHEN EXISTS (SELECT 1 FROM medias) THEN true ELSE false END)
+           )
+           """
+        )
+    )
+    await test_session.commit()
     # Читаем тестовый файл перед отправкой
-    async with aiofiles.open(
-            "tests/test_media_files/осел.jpeg",
-            'rb'
-    ) as sent_file:
+    async with aiofiles.open("tests/test_media_files/осел.jpeg", "rb") as sent_file:
         content = await sent_file.read()
     resp_media = await async_client.post(
         "/api/medias",
         headers={"api-key": "test"},
-        files={"file": ("осел.jpeg", content, "image/jpeg")}
+        files={"file": ("осел.jpeg", content, "image/jpeg")},
     )
     # получаем id вновь созданного медиафала
-    media_id = resp_media.json().get('media_id')
+    media_id = resp_media.json().get("media_id")
+    # Получить имя sequence для поля id в таблице medias
+    result = await test_session.execute(
+        text("SELECT pg_get_serial_sequence('tweets', 'id')")
+    )
+    seq_name = result.scalar_one()
+
+    # Сбросить sequence на максимум id из таблицы или 1, если таблица пустая
+    await test_session.execute(
+        text(
+            f"""
+          SELECT setval(
+              '{seq_name}',
+              COALESCE((SELECT MAX(id) FROM tweets), 1),
+              (SELECT CASE WHEN EXISTS (SELECT 1 FROM tweets) THEN true ELSE false END)
+          )
+          """
+        )
+    )
+    await test_session.commit()
+
     # делаем запрос к /api/tweets и подаем данные для твита
     resp_tweet = await async_client.post(
         "/api/tweets",
         headers={"api-key": "test"},
         json={
             "tweet_data": "текст теста test_post_api_tweets",
-            "tweet_media_ids": [media_id]
-        }
+            "tweet_media_ids": [media_id],
+        },
     )
     # проверяем ответы эндпоинта
-    new_tweet_id = resp_tweet.json().get('tweet_id')
+    new_tweet_id = resp_tweet.json().get("tweet_id")
     assert resp_tweet.status_code == 200
-    assert resp_tweet.json().get('result') == True
+    assert resp_tweet.json().get("result") == True
     assert new_tweet_id
     # проверяем связь медиа -> твит
     async with test_session.begin():
         result = await test_session.execute(
             select(Medias).where(
-                and_(
-                    Medias.id == media_id,
-                    Medias.tweet_id == new_tweet_id
-                )
+                and_(Medias.id == media_id, Medias.tweet_id == new_tweet_id)
             )
         )
         # получаем запись если она есть тест пройден связь установлена
@@ -60,9 +95,7 @@ async def test_post_api_tweets(async_client, test_session):
 
     # очищаем за тестом мусорные данные из таблицы медиа
     async with test_session.begin():
-        result = await test_session.execute(
-            select(Medias).where(Medias.id == media_id)
-        )
+        result = await test_session.execute(select(Medias).where(Medias.id == media_id))
         media = result.scalar_one_or_none()
         if media:
             await test_session.delete(media)
@@ -84,17 +117,13 @@ async def test_post_api_tweets(async_client, test_session):
         else:
             pass
 
+
 @pytest.mark.tweets_post
 @pytest.mark.asyncio
-@pytest.mark.parametrize("api_key, status_code", [('bad-key', 404), ("", 401)])
+@pytest.mark.parametrize("api_key, status_code", [("bad-key", 404), ("", 401)])
 async def test_negative_api_tweets(async_client, api_key, status_code):
     """
     Проверка ответа API при неверном или отсутствующем API-ключе.
     """
-    resp = await async_client.post(
-        "/api/tweets",
-        headers={"api-key": api_key},
-        json={
-
-        })
+    resp = await async_client.post("/api/tweets", headers={"api-key": api_key}, json={})
     assert resp.status_code == status_code

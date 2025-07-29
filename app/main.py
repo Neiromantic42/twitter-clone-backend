@@ -1,33 +1,32 @@
-from fastapi import FastAPI, Request, Path
-from fastapi import Depends, UploadFile, File
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path as PathlibPath
+
+import aiofiles
+from fastapi import Depends, FastAPI, File, Path, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
-import logging
-import aiofiles
-from sqlalchemy import update, delete, insert
+from sqlalchemy import delete, insert, update
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from contextlib import asynccontextmanager
 
 # импорт для теста
 from app.config import MEDIA_DIR
-from pathlib import Path as PathlibPath
-
-from app.models import Users, Tweets, Medias, Likes, Follows
-
+from app.database import AsyncSession, Base, async_session, engine, get_session
 from app.dependencies import get_current_user
-from app.database import async_session, engine, Base, get_session, AsyncSession
-from app.schemas.api_users_me import UserMeResponse
-from app.schemas.api_tweets import TweetListResponse
+from app.models import Follows, Likes, Medias, Tweets, Users
+from app.schemas.api_likes_add_and_delete import (
+    ResponseApiAddLike,
+    ResponseApiDeleteLike,
+)
 from app.schemas.api_medias import ResponseApiMedias
-from app.schemas.post_api_tweets import TweetData, AnswerApiTweets
-from app.schemas.tweet_delete_schemas import ResponseTweetDelete
-from app.schemas.api_likes_add_and_delete import ResponseApiAddLike, ResponseApiDeleteLike
-from app.schemas.get_api_users_user_id_schemas import ResponseWithUserData
+from app.schemas.api_tweets import TweetListResponse
+from app.schemas.api_users_me import UserMeResponse
 from app.schemas.api_users_user_id_follow_delete import Response
-
-
+from app.schemas.get_api_users_user_id_schemas import ResponseWithUserData
+from app.schemas.post_api_tweets import AnswerApiTweets, TweetData
+from app.schemas.tweet_delete_schemas import ResponseTweetDelete
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -45,70 +44,85 @@ async def lifespan(app: FastAPI):
     # Проверяем есть ли записи в таблицах
     async with async_session() as session:
         async with session.begin():
-            query = (select(Users).limit(1))
+            query = select(Users).limit(1)
             result = await session.execute(query)
             user = result.scalar_one_or_none()
             # если записей нет начинаем предзаполнять таблицы
             if user is None:
-                session.add_all([
-                    Users(id=1 ,name="Alexander", api_key="test"),
-                    Users(id=2, name="Kate", api_key="key2"),
-                    Users(id=3, name="Sergey", api_key="key3")
-                ])
+                session.add_all(
+                    [
+                        Users(id=1, name="Alexander", api_key="test"),
+                        Users(id=2, name="Kate", api_key="key2"),
+                        Users(id=3, name="Sergey", api_key="key3"),
+                    ]
+                )
                 logger.info("Inserted default users into the database.")
-                session.add_all([
-                    Follows(follower_id=2, followed_id=1),
-                    Follows(follower_id=2, followed_id=3),
-                    Follows(follower_id=3, followed_id=1),
-                    Follows(follower_id=3, followed_id=2),
-                    Follows(follower_id=1, followed_id=3),
-                    Follows(follower_id=1, followed_id=2)
-                ])
+                session.add_all(
+                    [
+                        Follows(follower_id=2, followed_id=1),
+                        Follows(follower_id=2, followed_id=3),
+                        Follows(follower_id=3, followed_id=1),
+                        Follows(follower_id=3, followed_id=2),
+                        Follows(follower_id=1, followed_id=3),
+                        Follows(follower_id=1, followed_id=2),
+                    ]
+                )
                 logger.info("Added default subscriptions to the database.")
-                session.add_all([
-                    Tweets(id=11, user_id=1, content="сплав по марийской тайге"),
-                    Tweets(id=13, user_id=1, content="Видели столбы на Лене"),
-                    Tweets(id=15, user_id=3, content="Я сергей - но я не гей"),
-                    Tweets(id=19, user_id=2, content="Ред флаги в мужиках"),
-                    Tweets(id=22, user_id=1, content="Июньская жара"),
-                    Tweets(id=56, user_id=1, content="21.07.2025 удалось пофиксить бак"),
-                    Tweets(id=58, user_id=1, content="Мое любимое дерево"),
-                    Tweets(id=71, user_id=2, content="Купила себе пушку гонку для кофе райда ")
-                ])
+                session.add_all(
+                    [
+                        Tweets(id=11, user_id=1, content="сплав по марийской тайге"),
+                        Tweets(id=13, user_id=1, content="Видели столбы на Лене"),
+                        Tweets(id=15, user_id=3, content="Я сергей - но я не гей"),
+                        Tweets(id=19, user_id=2, content="Ред флаги в мужиках"),
+                        Tweets(id=22, user_id=1, content="Июньская жара"),
+                        Tweets(
+                            id=56, user_id=1, content="21.07.2025 удалось пофиксить бак"
+                        ),
+                        Tweets(id=58, user_id=1, content="Мое любимое дерево"),
+                        Tweets(
+                            id=71,
+                            user_id=2,
+                            content="Купила себе пушку гонку для кофе райда ",
+                        ),
+                    ]
+                )
                 logger.info("Added default tweets to the database.")
-                session.add_all([
-                    Medias(id=13, tweet_id=11, path_url="лес.jpeg"),
-                    Medias(id=15, tweet_id=13, path_url="ленские_столбы.jpeg"),
-                    Medias(id=17, tweet_id=15, path_url="гей.jpeg"),
-                    Medias(id=21, tweet_id=19, path_url="тупая_пизда.jpeg"),
-                    Medias(id=23, tweet_id=22, path_url="рица.webp"),
-                    Medias(id=119, tweet_id=56, path_url="пофиксил баг.jpg"),
-                    Medias(id=126, tweet_id=58, path_url="дуб.jpeg"),
-                    Medias(id=137, tweet_id=71, path_url="гревел.jpg")
-                ])
+                session.add_all(
+                    [
+                        Medias(id=13, tweet_id=11, path_url="лес.jpeg"),
+                        Medias(id=15, tweet_id=13, path_url="ленские_столбы.jpeg"),
+                        Medias(id=17, tweet_id=15, path_url="гей.jpeg"),
+                        Medias(id=21, tweet_id=19, path_url="тупая_пизда.jpeg"),
+                        Medias(id=23, tweet_id=22, path_url="рица.webp"),
+                        Medias(id=119, tweet_id=56, path_url="пофиксил баг.jpg"),
+                        Medias(id=126, tweet_id=58, path_url="дуб.jpeg"),
+                        Medias(id=137, tweet_id=71, path_url="гревел.jpg"),
+                    ]
+                )
                 logger.info("Added default media to the database.")
-                session.add_all([
-                    Likes(user_id=2, tweet_id=15),
-                    Likes(user_id=2, tweet_id=13),
-                    Likes(user_id=2, tweet_id=11),
-                    Likes(user_id=2, tweet_id=19),
-                    Likes(user_id=1, tweet_id=11),
-                    Likes(user_id=1, tweet_id=13),
-                    Likes(user_id=1, tweet_id=15),
-                    Likes(user_id=1, tweet_id=22),
-                    Likes(user_id=1, tweet_id=58),
-                    Likes(user_id=1, tweet_id=71),
-                ])
+                session.add_all(
+                    [
+                        Likes(user_id=2, tweet_id=15),
+                        Likes(user_id=2, tweet_id=13),
+                        Likes(user_id=2, tweet_id=11),
+                        Likes(user_id=2, tweet_id=19),
+                        Likes(user_id=1, tweet_id=11),
+                        Likes(user_id=1, tweet_id=13),
+                        Likes(user_id=1, tweet_id=15),
+                        Likes(user_id=1, tweet_id=22),
+                        Likes(user_id=1, tweet_id=58),
+                        Likes(user_id=1, tweet_id=71),
+                    ]
+                )
                 logger.info("Added default likes to the database.")
 
     # yield ставит точку паузы. Весь код до yield выполняется при старте
     yield
-    await engine.dispose() # Очищаем ресурсы и закрываем соединения
+    await engine.dispose()  # Очищаем ресурсы и закрываем соединения
+
 
 # Создаём экземпляр приложения FastAPI и передаём ему механизм жизненного цикла
-app = FastAPI(
-    lifespan=lifespan
-)
+app = FastAPI(lifespan=lifespan)
 # Монтируем статику для js, css
 app.mount("/css", StaticFiles(directory="app/templates/static/css"), name="css")
 app.mount("/js", StaticFiles(directory="app/templates/static/js"), name="js")
@@ -116,6 +130,7 @@ app.mount("/favicon.ico", StaticFiles(directory="app/templates"), name="favicon"
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
 templates = Jinja2Templates(directory="app/templates")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
@@ -125,6 +140,7 @@ async def root(request: Request):
     """
     return templates.TemplateResponse(request, "index.html", {"request": request})
 
+
 @app.get("/api/users/me", response_model=UserMeResponse)
 async def get_api_user_me(user: Users = Depends(get_current_user)):
     """
@@ -132,32 +148,27 @@ async def get_api_user_me(user: Users = Depends(get_current_user)):
     о его профиле
     """
     # Получаем список подписчиков
-    followers = [
-        {"id": f.follower.id, "name": f.follower.name}
-        for f in user.followers
-    ]
+    followers = [{"id": f.follower.id, "name": f.follower.name} for f in user.followers]
     logger.info(f"followers: {followers}")
     # Получаем список подписок (на кого подписан пользователь)
-    following = [
-        {"id": f.followed.id, "name": f.followed.name}
-        for f in user.following
-    ]
+    following = [{"id": f.followed.id, "name": f.followed.name} for f in user.following]
     logger.info(f"following: {following}")
 
     return {
-  "result": "true",
-  "user": {
-    "id": user.id,
-    "name": user.name,
-    "followers": followers,
-    "following": following
-  }
-}
+        "result": "true",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "followers": followers,
+            "following": following,
+        },
+    }
+
 
 @app.get("/api/tweets", response_model=TweetListResponse)
 async def get_twitter_feed(
-        user: Users = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session)
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """
     конечная точка, где на клиент отдается лента твиттера
@@ -165,64 +176,60 @@ async def get_twitter_feed(
     logger.info(f"Обьект юзера: {user}")
     # возвращаем список id всех пользователей, на которых подписан текущий пользователь [2,3]
     following_ids = [f.followed_id for f in user.following]
-    logger.info(f"список id всех пользователей, на которых подписан текущий пользователь: {following_ids}")
+    logger.info(
+        f"список id всех пользователей, на которых подписан текущий пользователь: {following_ids}"
+    )
     author_ids = [user.id] + following_ids
-    logger.info(f'Список id юзеров для ленты, кого показывать: {author_ids}')
+    logger.info(f"Список id юзеров для ленты, кого показывать: {author_ids}")
     # Запрос на получение всех твитов указанных пользователей
     tweets_query = (
         select(Tweets)
         .where(Tweets.user_id.in_(author_ids))
         .options(
-        selectinload(Tweets.likes).joinedload(Likes.user),
-                selectinload(Tweets.medias),
+            selectinload(Tweets.likes).joinedload(Likes.user),
+            selectinload(Tweets.medias),
         )
-        .order_by(Tweets.created_at.desc()))
+        .order_by(Tweets.created_at.desc())
+    )
 
     async with session.begin():
         result = await session.execute(tweets_query)
         tweets = result.scalars().all()
         for tweet in tweets:
-            logger.info({
-                "id": tweet.id,
-                "content": tweet.content,
-                "user_id": tweet.user_id,
-                "created_at": tweet.created_at,
-                "media_links": tweet.medias,
-                "likes": tweet.likes
-            })
+            logger.info(
+                {
+                    "id": tweet.id,
+                    "content": tweet.content,
+                    "user_id": tweet.user_id,
+                    "created_at": tweet.created_at,
+                    "media_links": tweet.medias,
+                    "likes": tweet.likes,
+                }
+            )
 
     return {
-  "result": True,
-  "tweets": [
-    {
-      "id": tweet.id,
-      "content": tweet.content,
-      "attachments": [f"media/{media.path_url}" for media in tweet.medias],
-      "author": {
-        "id": tweet.user.id,
-        "name": tweet.user.name
-      },
-      "likes": [
-        {
-          "user_id": like.user.id,
-          "name": like.user.name
-        }
-          for like in tweet.likes
-      ]
+        "result": True,
+        "tweets": [
+            {
+                "id": tweet.id,
+                "content": tweet.content,
+                "attachments": [f"media/{media.path_url}" for media in tweet.medias],
+                "author": {"id": tweet.user.id, "name": tweet.user.name},
+                "likes": [
+                    {"user_id": like.user.id, "name": like.user.name}
+                    for like in tweet.likes
+                ],
+            }
+            for tweet in tweets
+        ],
     }
-      for tweet in tweets
-  ]
-}
 
 
 @app.post("/api/medias", response_model=ResponseApiMedias)
 async def get_media_download(
-        user: Users = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session),
-        file: UploadFile = File(
-            ...,
-            description="Загружаемый файл"
-        )
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    file: UploadFile = File(..., description="Загружаемый файл"),
 ):
     """
     Endpoint для загрузки файлов из твита.
@@ -235,13 +242,12 @@ async def get_media_download(
             content={
                 "result": False,
                 "error_type": "BadRequest",
-                "error_message": "Missing mandatory parameter,"
-                                 " file in request body"
-            }
+                "error_message": "Missing mandatory parameter," " file in request body",
+            },
         )
     # читаем входящий файл и пишем его в нисходящий файл в директорию media
     # async with aiofiles.open(f"media/{file.filename}", 'wb') as out_file:
-    async with aiofiles.open(MEDIA_DIR / file.filename, 'wb') as out_file:
+    async with aiofiles.open(MEDIA_DIR / file.filename, "wb") as out_file:
         content = await file.read()
         await out_file.write(content)
 
@@ -251,41 +257,29 @@ async def get_media_download(
         new_media = Medias(path_url=file.filename)
         session.add(new_media)
 
+    return {"result": True, "media_id": new_media.id}
 
-    return {
-        "result": True,
-        "media_id": new_media.id
-    }
 
 @app.post("/api/tweets", response_model=AnswerApiTweets)
 async def get_create_tweet(
-        tweet_data: TweetData, # Валидация входных данных
-        user: Users = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session)
+    tweet_data: TweetData,  # Валидация входных данных
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """Конечная точка для создания твита"""
     # Проверяем подается ли список идентификаторов медиафайлов
     if tweet_data.tweet_media_ids == []:
         async with session.begin():
-            new_tweet = Tweets(
-                content=tweet_data.tweet_data,
-                user_id = user.id
-            )
+            new_tweet = Tweets(content=tweet_data.tweet_data, user_id=user.id)
             session.add(new_tweet)
             await session.flush()
             tweet_id = new_tweet.id
             logger.info(f"tweet_id: {tweet_id}")
-        return {
-            "result": True,
-            "tweet_id": tweet_id
-        }
+        return {"result": True, "tweet_id": tweet_id}
     # если же список идентификаторов медиафайлов не пустой
     else:
         async with session.begin():
-            new_tweet = Tweets(
-                content=tweet_data.tweet_data,
-                user_id = user.id
-            )
+            new_tweet = Tweets(content=tweet_data.tweet_data, user_id=user.id)
             session.add(new_tweet)
             await session.flush()
             tweet_id = new_tweet.id
@@ -297,22 +291,19 @@ async def get_create_tweet(
             )
             await session.execute(update_query)
 
-        return AnswerApiTweets(
-            result=True,
-            tweet_id=tweet_id
-        )
+        return AnswerApiTweets(result=True, tweet_id=tweet_id)  # type: ignore[arg-type]
 
 
 @app.delete("/api/tweets/{id}", response_model=ResponseTweetDelete)
 async def get_tweet_deleted(
-        id: int = Path(
-            ..., #Обязательное поле
-            title="Tweet id",
-            description="ID удаляемого твита",
-            ge=1, # значение больше или ровно 1
-        ),
-        user: Users = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session)
+    id: int = Path(
+        ...,  # Обязательное поле
+        title="Tweet id",
+        description="ID удаляемого твита",
+        ge=1,  # значение больше или ровно 1
+    ),
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """Конечная точка для удаления твита"""
     async with session.begin():
@@ -326,38 +317,39 @@ async def get_tweet_deleted(
                 content={
                     "result": False,
                     "error_type": "NotFound",
-                    "error_message": "Tweet not found"
-                }
+                    "error_message": "Tweet not found",
+                },
             )
         # Сравниваем api-key текущего юзера с api-key юзера удаляемого твита
-        api_key_weaving_user = user.api_key # API-ключ текущего пользователя (автор запроса)
-        api_key_of_tweet_to_be_removed = tweet.user.api_key # API-ключ владельца твита
+        api_key_weaving_user = (
+            user.api_key
+        )  # API-ключ текущего пользователя (автор запроса)
+        api_key_of_tweet_to_be_removed = tweet.user.api_key  # API-ключ владельца твита
         if api_key_weaving_user != api_key_of_tweet_to_be_removed:
             return JSONResponse(
                 status_code=403,
                 content={
                     "result": False,
                     "error_type": "Forbidden",
-                    "error_message": "Access denied"
-                }
+                    "error_message": "Access denied",
+                },
             )
         # если все окей, удаляем сам твит, и каскад удалит все связные данные
         if tweet:
             await session.delete(tweet)
-            return {
-                "result": True
-            }
+            return {"result": True}
+
 
 @app.post("/api/tweets/{tweet_id}/likes", response_model=ResponseApiAddLike)
 async def get_like_mark(
-        tweet_id: int = Path(
-            ...,
-            title="Tweet id",
-            description="ID понравившегося твита",
-            ge=1, # значение больше или ровно 1
-        ),
-        user: Users = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session)
+    tweet_id: int = Path(
+        ...,
+        title="Tweet id",
+        description="ID понравившегося твита",
+        ge=1,  # значение больше или ровно 1
+    ),
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """Конечная точка для получения лайка"""
     # Проверяем существует ли твит с таким id
@@ -372,17 +364,15 @@ async def get_like_mark(
                 content={
                     "result": False,
                     "error_type": "NotFound",
-                    "error_message": "Tweet not found"
-                }
+                    "error_message": "Tweet not found",
+                },
             )
         # Проверка: уже ли поставлен лайк этим пользователем
         current_user_id = user.id
         # Запрос на получение записи о лайке юзера переданному id твита
         result = await session.execute(
-            select(Likes)
-            .where(
-                Likes.user_id==current_user_id,
-                Likes.tweet_id==tweet.id
+            select(Likes).where(
+                Likes.user_id == current_user_id, Likes.tweet_id == tweet.id
             )
         )
         like = result.scalar_one_or_none()
@@ -393,30 +383,26 @@ async def get_like_mark(
                 content={
                     "result": False,
                     "error_type": "Conflict",
-                    "error_message": "Already liked"
-                }
+                    "error_message": "Already liked",
+                },
             )
         # Если все проверки пройдены, создаем лайк
-        new_like = Likes(
-            user_id=user.id,
-            tweet_id=tweet_id
-        )
+        new_like = Likes(user_id=user.id, tweet_id=tweet_id)
         session.add(new_like)
 
-    return {
-        "result": True
-    }
+    return {"result": True}
+
 
 @app.delete("/api/tweets/{tweet_id}/likes", response_model=ResponseApiDeleteLike)
 async def get_delete_like(
-        tweet_id: int = Path(
-            ...,
-            title="Tweet id",
-            description="ID понравившегося твита",
-            ge=1, # значение больше или ровно 1
-        ),
-        user: Users = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session)
+    tweet_id: int = Path(
+        ...,
+        title="Tweet id",
+        description="ID понравившегося твита",
+        ge=1,  # значение больше или ровно 1
+    ),
+    user: Users = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ):
     """Конечная точка для удаления лайка"""
     # Проверяем существует ли твит с таким id
@@ -431,17 +417,15 @@ async def get_delete_like(
                 content={
                     "result": False,
                     "error_type": "NotFound",
-                    "error_message": "Tweet not found"
-                }
+                    "error_message": "Tweet not found",
+                },
             )
         # Проверка: уже ли удален лайк
         current_user_id = user.id
         # Запрос на получение записи о лайке юзера переданному id твита
         result = await session.execute(
-            select(Likes)
-            .where(
-                Likes.user_id == current_user_id,
-                Likes.tweet_id == tweet.id
+            select(Likes).where(
+                Likes.user_id == current_user_id, Likes.tweet_id == tweet.id
             )
         )
         like = result.scalar_one_or_none()
@@ -452,20 +436,18 @@ async def get_delete_like(
                 content={
                     "result": False,
                     "error_type": "NotFound",
-                    "error_message": "Like already revoked"
-                }
+                    "error_message": "Like already revoked",
+                },
             )
         # Если все проверки пройдены, удаляем лайк
         await session.execute(
             delete(Likes).where(
-                Likes.user_id == current_user_id,
-                Likes.tweet_id == tweet.id
+                Likes.user_id == current_user_id, Likes.tweet_id == tweet.id
             )
         )
 
-    return {
-        "result": True
-    }
+    return {"result": True}
+
 
 @app.get("/api/users/{user_id}", response_model=ResponseWithUserData)
 async def get_user_data_by_id(
@@ -473,10 +455,10 @@ async def get_user_data_by_id(
         ...,
         title="User id",
         description="ID произвольного пользователя",
-        ge=1  # значение больше или равно 1
+        ge=1,  # значение больше или равно 1
     ),
     user: Users = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """
     Конечная точка для получения информации о
@@ -488,9 +470,10 @@ async def get_user_data_by_id(
             select(Users)
             .options(
                 selectinload(Users.followers).joinedload(Follows.follower),
-                selectinload(Users.following).joinedload(Follows.followed)
+                selectinload(Users.following).joinedload(Follows.followed),
             )
-            .where(Users.id == user_id))
+            .where(Users.id == user_id)
+        )
 
         requested_user = result.scalars().first()
         if requested_user is None:
@@ -499,8 +482,8 @@ async def get_user_data_by_id(
                 content={
                     "result": False,
                     "error_type": "NotFound",
-                    "error_message": "User not found"
-                }
+                    "error_message": "User not found",
+                },
             )
         # Получаем список подписчиков
         followers = [
@@ -521,9 +504,10 @@ async def get_user_data_by_id(
             "id": user_id,
             "name": requested_user.name,
             "followers": followers,
-            "following": following
-        }
+            "following": following,
+        },
     }
+
 
 @app.delete("/api/users/{user_id}/follow", response_model=Response)
 async def get_unsubscribe(
@@ -531,10 +515,10 @@ async def get_unsubscribe(
         ...,
         title="User id",
         description="ID текущего пользователя",
-        ge=1  # значение больше или равно 1
+        ge=1,  # значение больше или равно 1
     ),
     user: Users = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """Конечная точка для отписки от другого пользователя"""
     # сперва проверяем существует ли такая подписка
@@ -542,8 +526,7 @@ async def get_unsubscribe(
     async with session.begin():
         result = await session.execute(
             select(Follows).where(
-                Follows.follower_id == current_user_id,
-                Follows.followed_id == user_id
+                Follows.follower_id == current_user_id, Follows.followed_id == user_id
             )
         )
         subscription = result.scalar_one_or_none()
@@ -554,20 +537,18 @@ async def get_unsubscribe(
                 content={
                     "result": False,
                     "error_type": "NotFound",
-                    "error_message": "Subscription not found"
-                }
+                    "error_message": "Subscription not found",
+                },
             )
         # Если все проверки пройдены и подписка найдена, то удаляем ее
         await session.execute(
             delete(Follows).where(
-                Follows.follower_id == current_user_id,
-                Follows.followed_id == user_id
+                Follows.follower_id == current_user_id, Follows.followed_id == user_id
             )
         )
 
-    return {
-        "result": True
-    }
+    return {"result": True}
+
 
 @app.post("/api/users/{user_id}/follow", response_model=Response)
 async def get_subscription(
@@ -575,17 +556,15 @@ async def get_subscription(
         ...,
         title="User id",
         description="ID текущего пользователя",
-        ge=1  # значение больше или равно 1
+        ge=1,  # значение больше или равно 1
     ),
     user: Users = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """Конечная точка для получения подписки на другого пользователя"""
     # проверяем существует ли такой пользователь
     async with session.begin():
-        result = await session.execute(
-            select(Users).where(Users.id == user_id)
-        )
+        result = await session.execute(select(Users).where(Users.id == user_id))
         target_user = result.scalar_one_or_none()
         if target_user is None:
             return JSONResponse(
@@ -593,16 +572,15 @@ async def get_subscription(
                 content={
                     "result": False,
                     "error_type": "BadRequest",
-                    "error_message": "User not found"
-                }
+                    "error_message": "User not found",
+                },
             )
     # проверяем существует ли такая подписка
     current_user_id = user.id
     async with session.begin():
         result = await session.execute(
             select(Follows).where(
-                Follows.follower_id == current_user_id,
-                Follows.followed_id == user_id
+                Follows.follower_id == current_user_id, Follows.followed_id == user_id
             )
         )
         subscription = result.scalar_one_or_none()
@@ -612,12 +590,10 @@ async def get_subscription(
                 content={
                     "result": False,
                     "error_type": "BadRequest",
-                    "error_message": "Subscription already made"
-                }
+                    "error_message": "Subscription already made",
+                },
             )
         else:
-            new_follow = Follows(follower_id = user.id, followed_id = user_id)
+            new_follow = Follows(follower_id=user.id, followed_id=user_id)
             session.add(new_follow)
-            return {
-                "result": True
-            }
+            return {"result": True}

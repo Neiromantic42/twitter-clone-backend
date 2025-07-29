@@ -1,6 +1,8 @@
 import pytest
 from sqlalchemy.future import select
-from app.models import  Tweets
+
+from app.models import Tweets
+
 
 @pytest.mark.tweets_likes
 @pytest.mark.asyncio
@@ -14,12 +16,9 @@ async def test_api_tweets_likes(async_client, test_session):
         resp_tweet = await async_client.post(
             "/api/tweets",
             headers={"api-key": "test"},
-            json={
-                "tweet_data": "тестовый текст твита",
-                "tweet_media_ids": []
-            }
+            json={"tweet_data": "тестовый текст твита", "tweet_media_ids": []},
         )
-        new_tweet_id = resp_tweet.json().get('tweet_id')
+        new_tweet_id = resp_tweet.json().get("tweet_id")
         # делаем запрос для получения лайка
         resp_likes = await async_client.post(
             f"/api/tweets/{new_tweet_id}/likes",
@@ -47,18 +46,18 @@ async def test_api_tweets_likes(async_client, test_session):
             else:
                 pass
 
+
 @pytest.mark.tweets_likes
 @pytest.mark.asyncio
-@pytest.mark.parametrize("api_key, status_code", [('bad-key', 404), ("", 401)])
+@pytest.mark.parametrize("api_key, status_code", [("bad-key", 404), ("", 401)])
 async def test_negative_api_tweets_likes(async_client, api_key, status_code):
     """
     Проверка ответа API при неверном или отсутствующем API-ключе.
     """
-    resp = await async_client.post(
-        "/api/tweets/{}/likes",
-        headers={"api-key": api_key})
+    resp = await async_client.post("/api/tweets/{}/likes", headers={"api-key": api_key})
 
     assert resp.status_code == status_code
+
 
 @pytest.mark.tweets_likes
 @pytest.mark.asyncio
@@ -68,8 +67,7 @@ async def test_negative_likes_not_found(async_client, test_session):
     """
     non_existent_id_tweets = 99999
     resp = await async_client.post(
-        f"/api/tweets/{non_existent_id_tweets}/likes",
-        headers={"api-key": "test"}
+        f"/api/tweets/{non_existent_id_tweets}/likes", headers={"api-key": "test"}
     )
     assert resp.status_code == 404
     assert resp.json().get("error_type") == "NotFound"

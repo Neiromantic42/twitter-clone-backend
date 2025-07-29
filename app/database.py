@@ -1,14 +1,15 @@
+import logging
+
 import sqlalchemy
 from sqlalchemy.ext.asyncio import (  # Импортируем асинхронный движок и сессию
     AsyncSession,
     create_async_engine,
 )
-from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker  # Импортируем фабрику сессий
-import logging
+from sqlalchemy.orm import declarative_base
 
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
 
 DATABASE_URL = "postgresql+asyncpg://admin:admin@db:5432/admin"
 
@@ -25,6 +26,7 @@ async_session = sessionmaker(
 
 # Создаём базовый класс для описания моделей таблиц
 Base = sqlalchemy.orm.declarative_base()
+
 
 # метод для создания сессии
 async def get_session():

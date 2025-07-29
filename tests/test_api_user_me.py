@@ -1,10 +1,11 @@
-import pytest
-import logging
 import asyncio
+import logging
 
+import pytest
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
 
 @pytest.mark.users
 @pytest.mark.asyncio
@@ -16,8 +17,8 @@ async def test_api_user_me(async_client):
     """
     resp = await async_client.get("/api/users/me", headers={"api-key": "test"})
     assert resp.status_code == 200
-    assert resp.json()['result'] == "true"
-    user = resp.json().get('user')
+    assert resp.json()["result"] == "true"
+    user = resp.json().get("user")
     assert user
     for key in ["id", "name", "followers", "following"]:
         assert key in user
@@ -25,12 +26,11 @@ async def test_api_user_me(async_client):
 
 @pytest.mark.users
 @pytest.mark.asyncio
-@pytest.mark.parametrize("api_key, status_code", [('bad-key', 404), ("", 401)])
+@pytest.mark.parametrize("api_key, status_code", [("bad-key", 404), ("", 401)])
 async def test_negative_api_user_me(async_client, api_key, status_code):
     """
     Проверка ответа API при неверном или отсутствующем API-ключе.
     """
     logger.info(f"test_negative_api_user_me loop: {asyncio.get_running_loop()}")
-    resp = await async_client.get("/api/users/me",
-                                  headers={"api-key": api_key})
+    resp = await async_client.get("/api/users/me", headers={"api-key": api_key})
     assert resp.status_code == status_code

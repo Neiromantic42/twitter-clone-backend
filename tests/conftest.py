@@ -1,26 +1,29 @@
-import sys
-import pytest
-import os
-import pytest_asyncio
 import asyncio
 import logging
+import os
+import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import pytest
+import pytest_asyncio
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from typing import AsyncGenerator
-from httpx import AsyncClient, ASGITransport
+
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    async_sessionmaker,
     AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
 
-from app.main import app
 from app.database import get_session
+from app.main import app
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = "postgresql+asyncpg://admin:admin@localhost:5432/admin"
+
 
 @pytest_asyncio.fixture(scope="function")
 async def test_session() -> AsyncGenerator[AsyncSession, None]:
@@ -36,6 +39,7 @@ async def test_session() -> AsyncGenerator[AsyncSession, None]:
 
     await engine.dispose()
 
+
 @pytest.fixture(scope="function", autouse=True)
 def override_get_session(test_session):
     async def _override_get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -43,11 +47,13 @@ def override_get_session(test_session):
 
     app.dependency_overrides[get_session] = _override_get_session
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
 
 @pytest_asyncio.fixture()
 async def async_client(event_loop) -> AsyncGenerator[AsyncClient, None]:

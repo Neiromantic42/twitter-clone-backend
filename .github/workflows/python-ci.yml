@@ -38,7 +38,16 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest
+          pip install pytest black isort mypy
+      
+      - name: Lint with black
+        run: black --check .
+
+      - name: Lint with isort
+        run: isort --check-only .
+
+      - name: Type check with mypy
+        run: mypy .
 
       - name: Start docker-compose services
         run: docker compose up -d
