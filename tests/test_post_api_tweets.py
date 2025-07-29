@@ -2,7 +2,7 @@ import os
 
 import aiofiles
 import pytest
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 from sqlalchemy.future import select
 
 from app.config import MEDIA_DIR
@@ -19,6 +19,25 @@ async def test_post_api_tweets(async_client, test_session):
     с привязкой к этому медиафайлу.
     Проверяет успешную вставку и связь между таблицами Medias и Tweets.
     """
+    # Получить имя sequence для поля id в таблице medias
+    result = await test_session.execute(
+        text("SELECT pg_get_serial_sequence('medias', 'id')")
+    )
+    seq_name = result.scalar_one()
+
+    # Сбросить sequence на максимум id из таблицы или 1, если таблица пустая
+    await test_session.execute(
+        text(
+            f"""
+           SELECT setval(
+               '{seq_name}',
+               COALESCE((SELECT MAX(id) FROM medias), 1),
+               (SELECT CASE WHEN EXISTS (SELECT 1 FROM medias) THEN true ELSE false END)
+           )
+           """
+        )
+    )
+    await test_session.commit()
     # Читаем тестовый файл перед отправкой
     async with aiofiles.open("tests/test_media_files/осел.jpeg", "rb") as sent_file:
         content = await sent_file.read()
@@ -29,6 +48,26 @@ async def test_post_api_tweets(async_client, test_session):
     )
     # получаем id вновь созданного медиафала
     media_id = resp_media.json().get("media_id")
+    # Получить имя sequence для поля id в таблице medias
+    result = await test_session.execute(
+        text("SELECT pg_get_serial_sequence('tweets', 'id')")
+    )
+    seq_name = result.scalar_one()
+
+    # Сбросить sequence на максимум id из таблицы или 1, если таблица пустая
+    await test_session.execute(
+        text(
+            f"""
+          SELECT setval(
+              '{seq_name}',
+              COALESCE((SELECT MAX(id) FROM tweets), 1),
+              (SELECT CASE WHEN EXISTS (SELECT 1 FROM tweets) THEN true ELSE false END)
+          )
+          """
+        )
+    )
+    await test_session.commit()
+
     # делаем запрос к /api/tweets и подаем данные для твита
     resp_tweet = await async_client.post(
         "/api/tweets",

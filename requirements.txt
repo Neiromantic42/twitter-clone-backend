@@ -13,3 +13,24 @@ aiofiles
 pytest
 pytest-asyncio
 httpx
+black
+isort
+mypy
+# typing stubs (типы)
+types-aiofiles==24.1.0.20250708
+types-click==7.1.8
+types-colorama==0.4.15.20240311
+types-decorator==5.2.0.20250324
+types-docutils==0.21.0.20250728
+types-Flask==1.1.6
+types-greenlet==3.2.0.20250417
+types-Jinja2==2.11.9
+types-jsonschema==4.25.0.20250720
+types-MarkupSafe==1.1.10
+types-pexpect==4.9.0.20250516
+types-psycopg2==2.9.21.20250718
+types-Pygments==2.19.0.20250715
+types-PyMySQL==1.1.0.20250711
+types-python-dateutil==2.9.0.20241206
+types-ujson==5.10.0.20250326
+types-Werkzeug==1.0.9

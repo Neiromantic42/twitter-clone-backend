@@ -291,7 +291,7 @@ async def get_create_tweet(
             )
             await session.execute(update_query)
 
-        return AnswerApiTweets(result=True, tweet_id=tweet_id)
+        return AnswerApiTweets(result=True, tweet_id=tweet_id)  # type: ignore[arg-type]
 
 
 @app.delete("/api/tweets/{id}", response_model=ResponseTweetDelete)

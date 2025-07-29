@@ -18,10 +18,13 @@ class UserData(BaseModel):
         ...,
         title="User id",
         description="Уникальный идентификатор пользователя",
-        example=2,
+        examples=[{"value": 2}],
     )
     name: str = Field(
-        ..., title="User name", description="Имя пользователя", example="Alexander"
+        ...,
+        title="User name",
+        description="Имя пользователя",
+        examples=[{"value": "Alexander"}],
     )
     followers: list[UserShort] = Field(
         title="(подписчики) - это пользователи,\
@@ -40,6 +43,6 @@ class ResponseWithUserData(BaseModel):
         ...,
         title="Булево значение",
         description="Флаг успешности выполнения запроса",
-        example=True,
+        examples=[{"value": True}],
     )
     user: UserData = Field(..., title="словарь с данными о текущем пользователе")

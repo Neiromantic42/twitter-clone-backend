@@ -9,7 +9,7 @@ class ResponseApiAddLike(BaseModel):
         title="флаг успешности запроса",
         description="булево значение, говорящее об успешности операции: "
         "(поставлен ли лайк)",
-        example=True,
+        examples=[{"value": True}],
     )
 
 
@@ -19,5 +19,5 @@ class ResponseApiDeleteLike(BaseModel):
         title="флаг успешности выполнения запроса",
         description="булево значение, говорящее об успешности операции: "
         "(удален ли лайк)",
-        example=True,
+        examples=[{"value": True}],
     )
